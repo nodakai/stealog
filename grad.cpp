@@ -166,7 +166,7 @@ void calcMuSigma(const Restaurant2Reviews &rest2rev, int lc)
         }
         j->first->mu = mu_j;
         const int n = vr.size();
-        j->first->sigma = M2 / sum_alpha_i * n / (n - 1);
+        j->first->sigma = sqrt(M2 / sum_alpha_i * n / (n - 1));
     }
 }
 
@@ -200,7 +200,7 @@ void updateAlpha(const People &people, int lc)
     unsigned errCnt = 0;
     for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
         if ((*i)->m_valid > 0) {
-            double alphaNx = exp((*i)->sqSumEpsilon / (*i)->m_valid * 0.01);
+            double alphaNx = exp((*i)->sqSumEpsilon / (*i)->m_valid * 0.1);
             if ( ! isnormal(alphaNx)) {
                 printf("%s: alpha==%f; sum_j epsilon_ij==%f; #epsilon_ij==%u\n", (*i)->m_name.c_str(), (*i)->alpha(lc), (*i)->sqSumEpsilon, (*i)->m_valid);
                 if (errCnt++ > 30) throw runtime_error("updateAlpha");
@@ -222,7 +222,7 @@ void calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
 
         const double conv = convergence(people);
         printf("conv == %f\n", conv);
-        if (conv < 0.1)
+        if (conv < 0.05)
             break;
     }
 
@@ -234,12 +234,12 @@ void calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
         unsigned suspCnt = 0;
         for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
             const double alpha_i = (*i)->alpha(loopCnt);
-            if (alpha_i < 0.5) {
+            if (alpha_i < 0.3) {
                 printf("%s : %f\n", (*i)->m_name.c_str(), alpha_i);
                 ++suspCnt;
             }
         }
-        printf("%u suspicious reviewers found.  Quitting...\n", suspCnt);
+        printf("%u suspicious reviewers found.\n", suspCnt);
     }
 }
 
