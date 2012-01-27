@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 #include <functional>
-#include <set>
+#include <tr1/unordered_set>
 #include <stdexcept>
 #include <ctime>
 #include <cmath>
@@ -30,9 +30,9 @@ public:
 
     double &alpha(int loopCnt) { return m_alpha[loopCnt % 2]; }
 
-    bool operator<(const Reviewer &o) const {
-        return m_name < o.m_name;
-    }
+    bool operator<(const Reviewer &o) const { return m_name < o.m_name; }
+
+    bool operator==(const Reviewer &o) const { return m_name == o.m_name; }
 
     void reset() { m_sqSumEpsilon = m_valid = 0; }
 
@@ -48,10 +48,30 @@ class PointeeComparator
 {
 public:
     template<typename T>
-    bool operator() (const T *a, const T *b) { return *a < *b; }
+    bool operator() (const T *a, const T *b) const { return *a < *b; }
 };
 
-typedef set<Reviewer *, PointeeComparator> People;
+class PointeeEqualityPredicate
+{
+public:
+    template<typename T>
+    bool operator() (const T *a, const T *b) const { return *a == *b; }
+};
+
+static const tr1::hash<string> s_hs;
+
+namespace std {
+    namespace tr1 {
+        template<>
+        struct hash<Reviewer *>
+        {
+            size_t operator() (const Reviewer *r) const { return s_hs(r->m_name); }
+        };
+    }
+}
+
+// typedef set<Reviewer *, PointeeComparator> People;
+typedef tr1::unordered_set<Reviewer *, tr1::hash<Reviewer *>, PointeeEqualityPredicate> People;
 
 double convergence(const People &people)
 {
@@ -76,6 +96,16 @@ public:
 
     Restaurant(const char *name) : m_name(name), m_mu(ERR), m_sigma(ERR) { }
 };
+
+namespace std {
+    namespace tr1 {
+        template<>
+        struct hash<Restaurant *>
+        {
+            size_t operator() (const Restaurant *r) const { return s_hs(r->m_name); }
+        };
+    }
+}
 
 class Review {
 public:
@@ -152,6 +182,7 @@ public:
 
 typedef vector<Review *> VR;
 typedef map<Restaurant *, VR *> Restaurant2Reviews;
+// typedef tr1::unordered_map<Restaurant *, VR *> Restaurant2Reviews;
 
 /*
 def weighted_incremental_variance(dataWeightPairs):
@@ -364,5 +395,7 @@ int main(int argc, char *argv[]) {
     printResult(people);
 #endif // ifdef DEBUG_MYATOF
 
+    if (argc > 2)
+        getchar();
     return 0;
 }
