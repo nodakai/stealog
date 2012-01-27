@@ -344,12 +344,8 @@ int main(int argc, char *argv[]) {
     const clock_t t0 = clock();
     while (fgets(buf, buflen, fp)) {
         if (buf[0] == '@') {
-<<<<<<< HEAD
-=======
-            int l = strlen(buf);
+            const size_t l = strlen(buf);
             buf[l-1] = '\0'; //remove '\n'
-            Restaurant *rest = new Restaurant(buf + 1);
->>>>>>> elb/master
             vr = new VR;
             rest2rev.insert(make_pair(new Restaurant(buf + 1), vr));
         } else {
