@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <utility>
 #include <vector>
@@ -9,6 +10,7 @@
 #include <stdexcept>
 #include <ctime>
 #include <cmath>
+#include <fstream>
 
 using namespace std;
 
@@ -212,6 +214,37 @@ void updateAlpha(const People &people, int lc)
     }
 }
 
+//output data
+void dumpAll(char* filename, const Restaurant2Reviews &rest2rev, const People &people, int loopCnt){
+    ofstream ofs(filename);
+
+    //regiser shops
+    for (Restaurant2Reviews::const_iterator j(rest2rev.begin()), jEnd(rest2rev.end()); j != jEnd; ++j) {
+        const Restaurant r = *(j->first);
+        ofs << "shop:" << r.m_name << endl;
+    }
+
+    //authorities
+    for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
+        const double alpha_i = (*i)->alpha(loopCnt);
+        ofs << "authority:" << (*i)->m_name << ":" << alpha_i << endl;
+    }
+    
+    //reviews
+    for (Restaurant2Reviews::const_iterator j(rest2rev.begin()), jEnd(rest2rev.end()); j != jEnd; ++j) {
+        const Restaurant r = *(j->first);
+        const VR &vr = *j->second;
+
+        for (VR::const_iterator ij(vr.begin()), ijEnd(vr.end()); ij != ijEnd; ++ij) {
+            const double p_ij = (*ij)->getP();
+            if (p_ij >= 0) {
+                Reviewer * const i = (*ij)->m_reviewer;
+                ofs << "review:" << (r.m_name) << ":" << (i->m_name) << ":" << p_ij << endl;
+            }
+        }
+    }
+}
+
 void calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
 {
     int loopCnt = 0, MAX_LOOP = 100;
@@ -240,6 +273,7 @@ void calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
             }
         }
         printf("%u suspicious reviewers found.\n", suspCnt);
+        dumpAll("result.txt", rest2rev, people, loopCnt);
     }
 }
 
@@ -270,6 +304,8 @@ int main(int argc, char *argv[]) {
     const clock_t t0 = clock();
     while (fgets(buf, buflen, fp)) {
         if (buf[0] == '@') {
+            int l = strlen(buf);
+            buf[l-1] = '\0'; //remove '\n'
             Restaurant *rest = new Restaurant(buf + 1);
             vr = new VR;
             rest2rev.insert(make_pair(rest, vr));
