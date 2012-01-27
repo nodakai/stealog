@@ -12,13 +12,16 @@
 
 using namespace std;
 
+static const double ALPHA_RELIABLE = 0.9;
+static const double ALPHA_SUSPICIOUS = 0.3;
+
 class Reviewer {
 public:
     static const double ALPHA_INIT;
 
     const string m_name;
     unsigned m_valid;
-    double m_alpha[2], sqSumEpsilon;
+    double m_alpha[2], m_sqSumEpsilon;
 
     Reviewer(const char *raw, size_t num) : m_name(raw, num)
     { m_alpha[0] = m_alpha[1] = ALPHA_INIT; }
@@ -28,11 +31,25 @@ public:
     bool operator<(const Reviewer &o) const {
         return m_name < o.m_name;
     }
+
+    void reset() { m_sqSumEpsilon = m_valid = 0; }
+
+    void addEpsilon(double epsilon) {
+        m_sqSumEpsilon += epsilon * epsilon;
+        m_valid += 1;
+    }
 };
 
 const double Reviewer::ALPHA_INIT = 0.5;
 
-typedef set<Reviewer *> People;
+class PointeeComparator
+{
+public:
+    template<typename T>
+    bool operator() (const T *a, const T *b) { return *a < *b; }
+};
+
+typedef set<Reviewer *, PointeeComparator> People;
 
 double convergence(const People &people)
 {
@@ -52,11 +69,10 @@ static const int ERR = -666, NA = -777;
 
 class Restaurant {
 public:
-
     string m_name;
-    double mu, sigma;
+    double m_mu, m_sigma;
 
-    Restaurant(const char *name) : m_name(name), mu(ERR), sigma(ERR) { }
+    Restaurant(const char *name) : m_name(name), m_mu(ERR), m_sigma(ERR) { }
 };
 
 class Review {
@@ -164,9 +180,9 @@ void calcMuSigma(const Restaurant2Reviews &rest2rev, int lc)
             M2 += sum_alpha_i * delta * R;
             sum_alpha_i = sum_alpha_i_nx;
         }
-        j->first->mu = mu_j;
+        j->first->m_mu = mu_j;
         const int n = vr.size();
-        j->first->sigma = sqrt(M2 / sum_alpha_i * n / (n - 1));
+        j->first->m_sigma = sqrt(M2 / sum_alpha_i * n / (n - 1));
     }
 }
 
@@ -175,44 +191,48 @@ static const double MIN_DELTA = 1e-6;
 void calcEpsilon(const Restaurant2Reviews &rest2rev, const People &people)
 {
     for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
-        (*i)->sqSumEpsilon = (*i)->m_valid = 0;
+        (*i)->reset();
     }
 
     for (Restaurant2Reviews::const_iterator j(rest2rev.begin()), jEnd(rest2rev.end()); j != jEnd; ++j) {
         const VR &vr = *j->second;
-        const double mu_j = j->first->mu, sigma_j = j->first->sigma;
+        const double mu_j = j->first->m_mu, sigma_j = j->first->m_sigma;
 
         for (VR::const_iterator ij(vr.begin()), ijEnd(vr.end()); ij != ijEnd; ++ij) {
             const double p_ij = (*ij)->getP();
             if (p_ij >= 0) {
                 const double delta = fabs(p_ij - mu_j),
                      epsilon_ij = (delta < MIN_DELTA) ? 0 : delta / sigma_j;
-                Reviewer * const i = (*ij)->m_reviewer;
-                i->sqSumEpsilon -= epsilon_ij * epsilon_ij;
-                i->m_valid += 1;
+                (*ij)->m_reviewer->addEpsilon(epsilon_ij);
             }
         }
     }
 }
 
+static const double DUMPER = 0.1;
+static const double MIN_ALPHA = 0.05;
+
 void updateAlpha(const People &people, int lc)
 {
-    unsigned errCnt = 0;
+    // unsigned errCnt = 0;
     for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
         if ((*i)->m_valid > 0) {
-            double alphaNx = exp((*i)->sqSumEpsilon / (*i)->m_valid * 0.1);
-            if ( ! isnormal(alphaNx)) {
-                printf("%s: alpha==%f; sum_j epsilon_ij==%f; #epsilon_ij==%u\n", (*i)->m_name.c_str(), (*i)->alpha(lc), (*i)->sqSumEpsilon, (*i)->m_valid);
+            double alphaNx = exp( - DUMPER * (*i)->m_sqSumEpsilon / (*i)->m_valid);
+            /* if ( ! isnormal(alphaNx)) {
+                printf("%s: alpha==%f; sum_j epsilon_ij==%f; #epsilon_ij==%u\n",
+                    (*i)->m_name.c_str(), (*i)->alpha(lc), (*i)->sqSumEpsilon, (*i)->m_valid);
                 if (errCnt++ > 30) throw runtime_error("updateAlpha");
-            }
-            if ( ! (alphaNx > 0.05))
-                alphaNx = 0.05;
+            } */
+            if ( ! (alphaNx > MIN_ALPHA))
+                alphaNx = MIN_ALPHA;
             (*i)->alpha(lc + 1) = alphaNx;
         }
     }
 }
 
-void calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
+static const double CONV_CRITERION = 0.05;
+
+bool calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
 {
     int loopCnt = 0, MAX_LOOP = 100;
     for ( ; loopCnt < MAX_LOOP; ++loopCnt) {
@@ -222,25 +242,42 @@ void calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
 
         const double conv = convergence(people);
         printf("conv == %f\n", conv);
-        if (conv < 0.05)
+        if (conv < CONV_CRITERION)
             break;
     }
 
     if (loopCnt >= MAX_LOOP) {
         fprintf(stderr, "Didn't converge after %d times of loop.\n", loopCnt);
+        return false;
     } else {
         printf("After %d-th loop:\n", loopCnt);
-        printf("List of suspicious reviewers are:\n");
-        unsigned suspCnt = 0;
-        for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
-            const double alpha_i = (*i)->alpha(loopCnt);
-            if (alpha_i < 0.3) {
-                printf("%s : %f\n", (*i)->m_name.c_str(), alpha_i);
-                ++suspCnt;
-            }
-        }
-        printf("%u suspicious reviewers found.\n", suspCnt);
+        return true;
     }
+}
+
+void printResult(const People &people)
+{
+    printf("List of suspicious reviewers are:\n");
+    unsigned suspCnt = 0;
+    for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
+        const double alpha_i = (*i)->alpha(0);
+        if (alpha_i < ALPHA_SUSPICIOUS) {
+            printf("%s : %f\n", (*i)->m_name.c_str(), alpha_i);
+            ++suspCnt;
+        }
+    }
+    printf("%u suspicious reviewers found.\n", suspCnt);
+    printf("On the contrary, ");
+    // printf(" list of reliable reviewers are:\n");
+    unsigned relCnt = 0;
+    for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
+        const double alpha_i = (*i)->alpha(0);
+        if (alpha_i > ALPHA_RELIABLE) {
+            // printf("%s : %f\n", (*i)->m_name.c_str(), alpha_i);
+            ++relCnt;
+        }
+    }
+    printf("%u reliable reviewers found.\n", relCnt);
 }
 
 void printElapsed(const char *msg, clock_t a, clock_t b)
@@ -265,27 +302,27 @@ int main(int argc, char *argv[]) {
 
     People people;
     Restaurant2Reviews rest2rev;
-    unsigned count = 0;
+    unsigned numReviews = 0;
     VR *vr;
     const clock_t t0 = clock();
     while (fgets(buf, buflen, fp)) {
         if (buf[0] == '@') {
-            Restaurant *rest = new Restaurant(buf + 1);
             vr = new VR;
-            rest2rev.insert(make_pair(rest, vr));
+            rest2rev.insert(make_pair(new Restaurant(buf + 1), vr));
         } else {
             vr->push_back(new Review(buf, people));
-            ++count;
+            ++numReviews;
         }
     }
     const clock_t t1 = clock();
     printElapsed("Reading data", t0, t1);
-    printf("#people == %u;  #rest2rev == %u; count=%u\n",
-        unsigned(people.size()), unsigned(rest2rev.size()), count);
+    printf("#people == %u;  #restaurants == %u; numReviews=%u\n",
+        static_cast<unsigned>(people.size()), static_cast<unsigned>(rest2rev.size()), numReviews);
 
     calcAuth(people, rest2rev);
     const clock_t t2 = clock();
     printElapsed("Authority calculation", t1, t2);
+    printResult(people);
 
     return 0;
 }
