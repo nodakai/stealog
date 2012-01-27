@@ -82,28 +82,31 @@ public:
 
     static double myAtof(const char * const str)
     {
+        /*
+        char *cp;
+        const double res = strtof(str, &cp);
+        return (str == cp) ? NA : res;
+        */
         const char *cp = str;
-        int BEFORE = -1, mode = BEFORE;
+        const int BEFORE = 0;
         double d = 0;
-        while (true) {
+        for (int mode = BEFORE; ; ) {
             const char c = *cp;
             if ('0' <= c && c <= '9') {
-                d = 10 * d + (c - '0');
-                if (mode > BEFORE)
-                    ++mode;
+                if (mode == BEFORE)
+                    d = 10 * d + (c - '0');
+                else d += (static_cast<double>(c - '0') / (mode *= 10));
+                // printf("%d %.f\n", mode, d);
             } else if (c == '.' && mode == BEFORE) {
                 ++mode;
             } else break;
             cp++;
         }
-        while (mode-- > 0) {
-            d /= 10;
-        }
         return (str == cp) ? NA : d;
     }
 
     Reviewer *parse(const char * const line, double &day, double &night) {
-        int i = 0;
+        unsigned i = 0;
         Reviewer *reviewer;
         do {
             const char c = line[i];
@@ -181,7 +184,7 @@ void calcMuSigma(const Restaurant2Reviews &rest2rev, int lc)
             sum_alpha_i = sum_alpha_i_nx;
         }
         j->first->m_mu = mu_j;
-        const int n = vr.size();
+        const unsigned n = static_cast<unsigned>(vr.size());
         j->first->m_sigma = sqrt(M2 / sum_alpha_i * n / (n - 1));
     }
 }
@@ -291,11 +294,11 @@ int main(int argc, char *argv[]) {
         exit(10);
     }
 
-    /* for (int i = 1; i < argc || exit(10); ++i) {
+#ifdef DEBUG_MYATOF
+    for (int i = 1; i < argc; ++i) {
         printf("%s => %f\n", argv[i], Review::myAtof(argv[i]));
     }
-    return 0; */
-
+#else
     FILE * const fp = fopen(argv[1], "r");
     const size_t buflen = 128;
     char buf[buflen];
@@ -323,6 +326,7 @@ int main(int argc, char *argv[]) {
     const clock_t t2 = clock();
     printElapsed("Authority calculation", t1, t2);
     printResult(people);
+#endif // ifdef DEBUG_MYATOF
 
     return 0;
 }
