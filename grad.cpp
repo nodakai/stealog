@@ -94,7 +94,7 @@ public:
     string m_name;
     double m_mu, m_sigma;
 
-    Restaurant(const char *name) : m_name(name), m_mu(ERR), m_sigma(ERR) { }
+    Restaurant(const char *name, unsigned len) : m_name(name, len), m_mu(ERR), m_sigma(ERR) { }
 };
 
 namespace std {
@@ -267,8 +267,8 @@ void updateAlpha(const People &people, int lc)
 }
 
 //output data
-void dumpAll(const char *filename, const Restaurant2Reviews &rest2rev, const People &people) {
-    ofstream ofs(filename);
+void dumpAll(const string &filename, const Restaurant2Reviews &rest2rev, const People &people) {
+    ofstream ofs(filename.c_str());
 
     //regiser shops
     for (Restaurant2Reviews::const_iterator j(rest2rev.begin()), jEnd(rest2rev.end()); j != jEnd; ++j) {
@@ -334,7 +334,6 @@ void printResult(const People &people)
         }
     }
     printf("%u suspicious reviewers found.\n", suspCnt);
-    //dumpAll("result.txt", rest2rev, people, loopCnt);
     printf("On the contrary, ");
     // printf(" list of reliable reviewers are:\n");
     unsigned relCnt = 0;
@@ -354,8 +353,22 @@ void printElapsed(const char *msg, clock_t a, clock_t b)
 }
 
 int main(int argc, char *argv[]) {
+    struct options {
+        bool m_stop;
+        string m_dump;
+    } options;
+    for (char **arg = argv + 1; *arg; ++arg) {
+        if (0 == strcmp("--stop", *arg)) {
+            options.m_stop = true;
+            ++argv, --argc;
+        } else if (0 == strcmp("--dump", *arg)) {
+            options.m_dump = *(++arg);
+            argv += 2, argc -= 2;
+        }
+    }
+
     if (argc < 2) {
-        fprintf(stderr, "USAGE: grad input.txt\n");
+        fprintf(stderr, "USAGE: grad [--stop] [--dump output.txt] input.txt\n");
         exit(10);
     }
 
@@ -376,9 +389,8 @@ int main(int argc, char *argv[]) {
     while (fgets(buf, buflen, fp)) {
         if (buf[0] == '@') {
             const size_t l = strlen(buf);
-            buf[l-1] = '\0'; //remove '\n'
             vr = new VR;
-            rest2rev.insert(make_pair(new Restaurant(buf + 1), vr));
+            rest2rev.insert(make_pair(new Restaurant(buf + 1, l - 2), vr));
         } else {
             vr->push_back(new Review(buf, people));
             ++numReviews;
@@ -392,10 +404,16 @@ int main(int argc, char *argv[]) {
     calcAuth(people, rest2rev);
     const clock_t t2 = clock();
     printElapsed("Authority calculation", t1, t2);
+
     printResult(people);
+    if ( ! options.m_dump.empty())
+        dumpAll(options.m_dump, rest2rev, people);
+    const clock_t t3 = clock();
+    printElapsed("Output", t2, t3);
 #endif // ifdef DEBUG_MYATOF
 
-    if (argc > 2)
+    if (options.m_stop)
         getchar();
+
     return 0;
 }
