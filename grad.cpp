@@ -273,7 +273,7 @@ void calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
             }
         }
         printf("%u suspicious reviewers found.\n", suspCnt);
-        dumpAll("result.txt", rest2rev, people, loopCnt);
+        //dumpAll("result.txt", rest2rev, people, loopCnt);
     }
 }
 
