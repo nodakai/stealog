@@ -297,7 +297,7 @@ void dumpAll(const string &filename, const Restaurant2Reviews &rest2rev, const P
     }
 }
 
-static const double CONV_CRITERION = 0.05;
+static const double CONV_CRITERION = 1e-6;
 
 bool calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
 {
