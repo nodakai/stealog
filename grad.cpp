@@ -14,6 +14,14 @@
 
 using namespace std;
 
+struct Options {
+    bool m_stop;
+    string m_out;
+    double m_convThres, m_damp;
+
+    Options() : m_stop(false), m_convThres(1e-6), m_damp(0.1) { }
+};
+
 static const double ALPHA_RELIABLE = 0.9;
 static const double ALPHA_SUSPICIOUS = 0.3;
 
@@ -116,7 +124,7 @@ public:
     {
         /*
         char *cp;
-        const double res = strtof(str, &cp);
+        const double res = strtod(str, &cp);
         return (str == cp) ? NA : res;
         */
         const char *cp = str;
@@ -245,15 +253,14 @@ void calcEpsilon(const Restaurant2Reviews &rest2rev, const People &people)
     }
 }
 
-static const double DUMPER = 0.1;
 static const double MIN_ALPHA = 0.05;
 
-void updateAlpha(const People &people, int lc)
+void updateAlpha(const People &people, int lc, double damp)
 {
     // unsigned errCnt = 0;
     for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
         if ((*i)->m_valid > 0) {
-            double alphaNx = exp( - DUMPER * (*i)->m_sqSumEpsilon / (*i)->m_valid);
+            double alphaNx = exp( - damp * (*i)->m_sqSumEpsilon / (*i)->m_valid);
             /* if ( ! isnormal(alphaNx)) {
                 printf("%s: alpha==%f; sum_j epsilon_ij==%f; #epsilon_ij==%u\n",
                     (*i)->m_name.c_str(), (*i)->alpha(lc), (*i)->sqSumEpsilon, (*i)->m_valid);
@@ -297,19 +304,17 @@ void dumpAll(const string &filename, const Restaurant2Reviews &rest2rev, const P
     }
 }
 
-static const double CONV_CRITERION = 1e-6;
-
-bool calcAuth(const People &people, const Restaurant2Reviews &rest2rev)
+bool calcAuth(const People &people, const Restaurant2Reviews &rest2rev, double criterion, double damp)
 {
     int loopCnt = 0, MAX_LOOP = 100;
     for ( ; loopCnt < MAX_LOOP; ++loopCnt) {
         calcMuSigma(rest2rev, loopCnt);
         calcEpsilon(rest2rev, people);
-        updateAlpha(people, loopCnt);
+        updateAlpha(people, loopCnt, damp);
 
         const double conv = convergence(people);
         printf("conv == %f\n", conv);
-        if (conv < CONV_CRITERION)
+        if (conv < criterion)
             break;
     }
 
@@ -353,22 +358,26 @@ void printElapsed(const char *msg, clock_t a, clock_t b)
 }
 
 int main(int argc, char *argv[]) {
-    struct options {
-        bool m_stop;
-        string m_dump;
-    } options;
+    Options options;
+
     for (char **arg = argv + 1; *arg; ++arg) {
         if (0 == strcmp("--stop", *arg)) {
             options.m_stop = true;
             ++argv, --argc;
-        } else if (0 == strcmp("--dump", *arg)) {
-            options.m_dump = *(++arg);
+        } else if (0 == strcmp("--out", *arg)) {
+            options.m_out = *(++arg);
+            argv += 2, argc -= 2;
+        } else if (0 == strcmp("--thres", *arg)) {
+            options.m_convThres = atof(*(++arg));
+            argv += 2, argc -= 2;
+        } else if (0 == strcmp("--damp", *arg)) {
+            options.m_damp = atof(*(++arg));
             argv += 2, argc -= 2;
         }
     }
 
     if (argc < 2) {
-        fprintf(stderr, "USAGE: grad [--stop] [--dump output.txt] input.txt\n");
+        fprintf(stderr, "USAGE: grad [--stop] [--out output.txt] [--thres 1e-6] [--damp 0.1] input.txt\n");
         exit(10);
     }
 
@@ -401,13 +410,13 @@ int main(int argc, char *argv[]) {
     printf("#people == %u;  #restaurants == %u; numReviews=%u\n",
         static_cast<unsigned>(people.size()), static_cast<unsigned>(rest2rev.size()), numReviews);
 
-    calcAuth(people, rest2rev);
+    calcAuth(people, rest2rev, options.m_convThres, options.m_damp);
     const clock_t t2 = clock();
     printElapsed("Authority calculation", t1, t2);
 
     printResult(people);
-    if ( ! options.m_dump.empty())
-        dumpAll(options.m_dump, rest2rev, people);
+    if ( ! options.m_out.empty())
+        dumpAll(options.m_out, rest2rev, people);
     const clock_t t3 = clock();
     printElapsed("Output", t2, t3);
 #endif // ifdef DEBUG_MYATOF
