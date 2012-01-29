@@ -6,5 +6,5 @@ CXXFLAGS= -Wall -Wextra -Ofast -g3
 grad : grad.cpp Makefile
 	$(CXX) $< -o $@ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS)
 
-merged.txt : ratings.txt merge.rb
+merged.txt : result2.txt merge.rb
 	ruby merge.rb $< > $@

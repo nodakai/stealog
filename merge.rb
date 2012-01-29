@@ -2,11 +2,12 @@
 
 h = Hash.new() {|h,k| h[k] = [] }
 id = nil
+ATMARK = '@'[0]
 ARGF.readlines.each {|l|
-    case l
-    when %r[tabelog/(.*)_dtlrvwlst]
-        id = $1
-    when /^\.\./
+    if l[0] == ATMARK
+        l =~ %r[tabelog/(.*)_dtlrvwlst[^,]*,(.*)\Z]
+        id = $1 + ',' + $2
+    elsif l =~ /^\.\./
         raise "Unexpected line \"#{l}\""
     else
         h[id] << l
