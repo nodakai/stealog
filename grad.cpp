@@ -17,24 +17,20 @@ using namespace std;
 struct Options {
     bool m_stop;
     string m_out;
-    double m_convThres, m_damp;
+    double m_convThres, m_damp, m_alphaRel, m_alphaSusp, m_alphaIni, m_alphaMin;
 
-    Options() : m_stop(false), m_convThres(1e-6), m_damp(0.1) { }
+    Options() : m_stop(false), m_convThres(1e-6), m_damp(0.1),
+        m_alphaRel(0.95), m_alphaSusp(0.3), m_alphaIni(0.5), m_alphaMin(0.05) { }
 };
-
-static const double ALPHA_RELIABLE = 0.9;
-static const double ALPHA_SUSPICIOUS = 0.3;
 
 class Reviewer {
 public:
-    static const double ALPHA_INIT;
-
     const string m_name;
     unsigned m_valid;
     double m_alpha[2], m_sqSumEpsilon;
 
-    Reviewer(const char *raw, size_t num) : m_name(raw, num)
-    { m_alpha[0] = m_alpha[1] = ALPHA_INIT; }
+    Reviewer(const char *raw, size_t num, double alphaIni) : m_name(raw, num)
+    { m_alpha[0] = m_alpha[1] = alphaIni; }
 
     double &alpha(int loopCnt) { return m_alpha[loopCnt % 2]; }
 
@@ -49,8 +45,6 @@ public:
         m_valid += 1;
     }
 };
-
-const double Reviewer::ALPHA_INIT = 0.5;
 
 class PointeeComparator
 {
@@ -145,14 +139,14 @@ public:
         return (str == cp) ? NA : d;
     }
 
-    Reviewer *parse(const char * const line, double &day, double &night) {
+    static Reviewer *parse(const char * const line, double &day, double &night, double alphaIni) {
         unsigned i = 0;
         Reviewer *reviewer;
         do {
             const char c = line[i];
             if (c == '\0') throw invalid_argument(line);
             if (c == ',') {
-                reviewer = new Reviewer(line, i++);
+                reviewer = new Reviewer(line, i++, alphaIni);
                 day = myAtof(line + i);
                 break;
             }
@@ -170,8 +164,8 @@ public:
         return reviewer;
     }
 
-    Review(const char * const line, People &people) : m_day(ERR), m_night(ERR) {
-        Reviewer * const reviewer = parse(line, m_day, m_night);
+    Review(const char * const line, People &people, double alphaIni) : m_day(ERR), m_night(ERR) {
+        Reviewer * const reviewer = parse(line, m_day, m_night, alphaIni);
         const pair<People::iterator, bool> res(people.insert(reviewer));
         m_reviewer = *res.first;
         if ( ! res.second) {
@@ -253,9 +247,7 @@ void calcEpsilon(const Restaurant2Reviews &rest2rev, const People &people)
     }
 }
 
-static const double MIN_ALPHA = 0.05;
-
-void updateAlpha(const People &people, int lc, double damp)
+void updateAlpha(const People &people, int lc, double damp, double alphaMin)
 {
     // unsigned errCnt = 0;
     for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
@@ -266,9 +258,7 @@ void updateAlpha(const People &people, int lc, double damp)
                     (*i)->m_name.c_str(), (*i)->alpha(lc), (*i)->sqSumEpsilon, (*i)->m_valid);
                 if (errCnt++ > 30) throw runtime_error("updateAlpha");
             } */
-            if ( ! (alphaNx > MIN_ALPHA))
-                alphaNx = MIN_ALPHA;
-            (*i)->alpha(lc + 1) = alphaNx;
+            (*i)->alpha(lc + 1) = (alphaNx >= alphaMin) ? alphaNx : alphaMin;
         }
     }
 }
@@ -304,13 +294,13 @@ void dumpAll(const string &filename, const Restaurant2Reviews &rest2rev, const P
     }
 }
 
-bool calcAuth(const People &people, const Restaurant2Reviews &rest2rev, double criterion, double damp)
+bool calcAuth(const People &people, const Restaurant2Reviews &rest2rev, double criterion, double damp, double minAlha)
 {
     int loopCnt = 0, MAX_LOOP = 100;
     for ( ; loopCnt < MAX_LOOP; ++loopCnt) {
         calcMuSigma(rest2rev, loopCnt);
         calcEpsilon(rest2rev, people);
-        updateAlpha(people, loopCnt, damp);
+        updateAlpha(people, loopCnt, damp, minAlha);
 
         const double conv = convergence(people);
         printf("conv == %f\n", conv);
@@ -327,13 +317,13 @@ bool calcAuth(const People &people, const Restaurant2Reviews &rest2rev, double c
     }
 }
 
-void printResult(const People &people)
+void printResult(const People &people, double alphaRel, double alphaSusp)
 {
     printf("List of suspicious reviewers are:\n");
     unsigned suspCnt = 0;
     for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
         const double alpha_i = (*i)->alpha(0);
-        if (alpha_i < ALPHA_SUSPICIOUS) {
+        if (alpha_i < alphaSusp) {
             printf("%s : %f\n", (*i)->m_name.c_str(), alpha_i);
             ++suspCnt;
         }
@@ -344,7 +334,7 @@ void printResult(const People &people)
     unsigned relCnt = 0;
     for (People::const_iterator i(people.begin()), iEnd(people.end()); i != iEnd; ++i) {
         const double alpha_i = (*i)->alpha(0);
-        if (alpha_i > ALPHA_RELIABLE) {
+        if (alpha_i > alphaRel) {
             // printf("%s : %f\n", (*i)->m_name.c_str(), alpha_i);
             ++relCnt;
         }
@@ -372,6 +362,18 @@ int main(int argc, char *argv[]) {
             argv += 2, argc -= 2;
         } else if (0 == strcmp("--damp", *arg)) {
             options.m_damp = atof(*(++arg));
+            argv += 2, argc -= 2;
+        } else if (0 == strcmp("--arel", *arg)) {
+            options.m_alphaRel = atof(*(++arg));
+            argv += 2, argc -= 2;
+        } else if (0 == strcmp("--asusp", *arg)) {
+            options.m_alphaSusp = atof(*(++arg));
+            argv += 2, argc -= 2;
+        } else if (0 == strcmp("--aini", *arg)) {
+            options.m_alphaIni = atof(*(++arg));
+            argv += 2, argc -= 2;
+        } else if (0 == strcmp("--amin", *arg)) {
+            options.m_alphaMin = atof(*(++arg));
             argv += 2, argc -= 2;
         }
     }
@@ -401,7 +403,7 @@ int main(int argc, char *argv[]) {
             vr = new VR;
             rest2rev.insert(make_pair(new Restaurant(buf + 1, l - 2), vr));
         } else {
-            vr->push_back(new Review(buf, people));
+            vr->push_back(new Review(buf, people, options.m_alphaIni));
             ++numReviews;
         }
     }
@@ -410,7 +412,7 @@ int main(int argc, char *argv[]) {
     printf("#people == %u;  #restaurants == %u; numReviews=%u\n",
         static_cast<unsigned>(people.size()), static_cast<unsigned>(rest2rev.size()), numReviews);
 
-    calcAuth(people, rest2rev, options.m_convThres, options.m_damp);
+    calcAuth(people, rest2rev, options.m_convThres, options.m_damp, options.m_alphaMin);
     const clock_t t2 = clock();
     printElapsed("Authority calculation", t1, t2);
 
