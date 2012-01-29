@@ -12,6 +12,10 @@
 #include <cmath>
 #include <fstream>
 
+#ifdef SQLITE_ENABLED
+#include <sqlite3.h>
+#endif // ifdef SQLITE_ENABLED
+
 using namespace std;
 
 struct Options {
@@ -416,9 +420,20 @@ int main(int argc, char *argv[]) {
     const clock_t t2 = clock();
     printElapsed("Authority calculation", t1, t2);
 
-    printResult(people);
-    if ( ! options.m_out.empty())
-        dumpAll(options.m_out, rest2rev, people);
+    printResult(people, options.m_alphaRel, options.m_alphaSusp);
+    if ( ! options.m_out.empty()) {
+        const size_t sz = options.m_out.size();
+        if (sz > 4 && string::npos != options.m_out.find(".db", sz - 3)) {
+            printf("dumpAllToSqlite()...");
+#ifdef SQLITE_ENABLED
+            dumpAllToSqlite(options.m_out, rest2rev, people);
+#else // ifdef SQLITE_ENABLED
+            printf("SQLITE_ENABLED");
+            dumpAll(options.m_out, rest2rev, people);
+#endif // ifdef SQLITE_ENABLED
+        } else
+            dumpAll(options.m_out, rest2rev, people);
+    }
     const clock_t t3 = clock();
     printElapsed("Output", t2, t3);
 #endif // ifdef DEBUG_MYATOF
